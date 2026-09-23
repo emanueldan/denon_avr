@@ -40,6 +40,12 @@ async def async_setup_entry(
     # The current sound mode as a diagnostic sensor (also on the media player).
     entities.append(DenonAvrSoundModeSensor(coordinator))
 
+    # AVR-X1400H pushes its active Amp Assign mode after a menu change. Surface
+    # that event as a stateful sensor for dashboards, rather than inferring it
+    # from the action button last pressed.
+    if device.discovery.device.model_name == "AVR-X1400H":
+        entities.append(DenonAvrAmpAssignSensor(coordinator))
+
     # The current master volume as a read only dB value. The media player keeps
     # the standard percentage control; this shows the actual level in dB.
     entities.append(DenonAvrVolumeSensor(coordinator))
@@ -75,6 +81,31 @@ class DenonAvrSoundModeSensor(DenonAvrEntity, SensorEntity):
     def native_value(self) -> str | None:
         value = self.coordinator.data.values.get("sound_mode")
         return str(value) if value is not None else None
+
+
+class DenonAvrAmpAssignSensor(DenonAvrEntity, SensorEntity):
+    """Expose the Amp Assign mode pushed by AVR-X1400H."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_name = "Amp Assign"
+
+    def __init__(self, coordinator: DenonAvrCoordinator) -> None:
+        super().__init__(coordinator, "sensor_amp_assign", sub_device="speakers")
+
+    @property
+    def native_value(self) -> str | None:
+        value = self.coordinator.data.values.get("amp_assign")
+        if value is not None:
+            return str(value)
+        # AVR-X1400H publishes speaker setup at startup even when it has not
+        # yet emitted SSPAAMOD. Front Height is absent for Front B and present
+        # for Front Height, providing a read-only initial-state fallback.
+        front_height = self.coordinator.data.speaker_sizes.get("FRH")
+        if front_height == "NON":
+            return "Front B"
+        if front_height is not None:
+            return "Front Height"
+        return None
 
 
 class DenonAvrVolumeSensor(DenonAvrEntity, SensorEntity):

@@ -116,6 +116,18 @@ class DenonAvrSelect(DenonAvrEntity, SelectEntity):
         self._attr_options = options
 
     @property
+    def options(self) -> list[str]:
+        if self._spec.id == "input_mode":
+            state = self.coordinator.data
+            if state.zone("main").source == "TV":
+                value = state.values.get("input_mode")
+                if value in {"ARC", "EARC"}:
+                    label = self._value_to_label.get(value)
+                    if label:
+                        return [label]
+        return self._attr_options
+
+    @property
     def current_option(self) -> str | None:
         value = self.coordinator.data.values.get(self._spec.id)
         if value is None:
@@ -420,9 +432,19 @@ class DenonAvrQuickSelect(DenonAvrEntity, SelectEntity):
     @property
     def current_option(self) -> str | None:
         number = self.coordinator.data.values.get("quick_select")
-        if not number:
-            return None
-        return self._names.get(int(number))
+        if number:
+            selected = self._names.get(int(number))
+            if selected:
+                return selected
+
+        input_mode = self.coordinator.data.values.get("input_mode")
+        default_name = {
+            "DIGITAL": "Media",
+            "ARC": "TV Audio",
+            "AUTO": "Spotify",
+        }.get(input_mode, "Media")
+        options = self.options
+        return default_name if default_name in options else (options[0] if options else None)
 
     async def async_select_option(self, option: str) -> None:
         for number, name in self._names.items():

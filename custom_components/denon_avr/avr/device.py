@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Callable
+from time import monotonic
 
 import aiohttp
 
@@ -110,6 +111,9 @@ class DenonAvrDevice:
         # Deviceinfo derived source list, used only if telnet introspection
         # yields no sources (see async_discover / async_await_ready).
         self._fallback_sources: list = []
+        # The documented menu commands are stateful. Serialize Amp Assign
+        # fallback macros so their navigation commands cannot overlap.
+        self._amp_assign_menu_lock = asyncio.Lock()
 
     # Public properties ----------------------------------------------------
 
@@ -625,6 +629,30 @@ class DenonAvrDevice:
         spec = self._profile.control("sound_mode")
         if spec is None:
             return
+        if name == "Dolby Surround":
+            if self._state.values.get("sound_mode_display") == name:
+                return
+            query = self._current_sound_modes_query()
+            movie = self._profile.sound_mode_genre_commands.get("MOV")
+            if not query or not movie:
+                raise RuntimeError("Cannot select Dolby Surround without MOVIE and OPSML")
+            # AVR-X1400H reports MSDOLBY SURROUND but ignores it as a setter.
+            # MOVIE cycles the receiver's selectable modes in this context.
+            for _ in range(max(1, len(self._discovery.current_sound_modes))):
+                self._state.values.pop("sound_mode_display", None)
+                await self._send(f"{spec.prefix}{movie}")
+                await asyncio.sleep(0.4)
+                await self._send(query)
+                for _ in range(12):
+                    selected = self._state.values.get("sound_mode_display")
+                    if selected:
+                        break
+                    await asyncio.sleep(0.1)
+                else:
+                    raise TimeoutError("Receiver did not confirm the selected sound mode")
+                if selected == name:
+                    return
+            raise RuntimeError("Dolby Surround was not selected by the receiver")
         await self._send(f"{spec.prefix}{self._resolve_sound_mode_wire(name)}")
         await self._refresh_current_sound_modes()
 
@@ -727,7 +755,23 @@ class DenonAvrDevice:
     async def async_select_quick_select(self, number: int) -> None:
         """Recall a main zone quick select preset by its number."""
 
-        await self._send(f"MSQUICK{int(number)}")
+        number = int(number)
+        self._state.values["quick_select_pending_until"] = monotonic() + 5
+        try:
+            await self._send(f"MSQUICK{number}")
+        except Exception:
+            self._state.values.pop("quick_select_pending_until", None)
+            raise
+        # Some AVR models do not echo MSQUICK after a recall.  Publish the
+        # successfully requested preset immediately; a later AVR push or poll
+        # remains authoritative and can correct this state if needed.
+        self._state.values["quick_select"] = number
+        self._schedule_update()
+        # Quick Select recalls can include a distinct speaker calibration and
+        # Audyssey reference offset, but AVR-X1400H does not push these values.
+        # Re-query them after the receiver has applied the preset.
+        self._schedule_refresh("speaker_channel")
+        self._schedule_refresh("quick_select_audio")
 
     async def async_select_sound_mode_group(self, code: str) -> None:
         """Switch the receiver to a sound mode genre group by its code.
@@ -742,6 +786,51 @@ class DenonAvrDevice:
             await self._send(f"{spec.prefix}{wire}")
             await self._refresh_current_sound_modes()
 
+
+    async def async_set_amp_assign_from_menu(self, mode: str) -> None:
+        """Set Amp Assign through the documented on-screen-menu commands.
+
+        AVR-X1400H does not expose a discrete, readable Amp Assign command.
+        Its menu cursor is preserved after closing the setup screen, therefore
+        the macro explicitly returns to the Audio root entry before it exits.
+        """
+
+        directions = {"front_b": "MNCLT", "front_height": "MNCRT"}
+        direction = directions.get(mode)
+        if direction is None:
+            raise ValueError(f"Unsupported Amp Assign mode: {mode}")
+
+        commands: list[tuple[str, float]] = [
+            # Restore the stable Audio entry using the AVR UI behavior the
+            # receiver exposes: return through the hierarchy, open Option,
+            ("MNMEN OFF", 0.35),
+            ("MNOPT", 0.35),
+            ("MNMEN OFF", 0.35),
+
+            ("MNMEN ON", 0.35),
+            ("MNCDN", 0.35),
+            ("MNCDN", 0.35),
+            ("MNCDN", 0.35),
+            ("MNENT", 0.35),
+            ("MNCDN", 0.35),
+            ("MNENT", 0.35),
+            ("MNENT", 0.35),
+            # The AVR needs longer to enter the editable option list.
+            ("MNENT", 0.5),
+            (direction, 0.35),
+            ("MNENT", 0.35),
+            ("MNMEN OFF", 0.35),
+        ]
+        
+        async with self._amp_assign_menu_lock:
+            for command, delay in commands:
+                await self._send(command)
+                await asyncio.sleep(delay)
+        # Amp Assign changes the active speaker layout and can alter channel
+        # values. The AVR does not publish every dependent setting on its own.
+        self._schedule_refresh("speaker_channel")
+        self._schedule_refresh("quick_select_audio")
+
     async def async_set_control(self, control_id: str, value: object) -> None:
         """Set any profile driven feature control to a new value.
 
@@ -755,6 +844,23 @@ class DenonAvrDevice:
             return
         argument = self._encode_control_value(spec, value)
         if argument is None:
+            return
+        if control_id in {"subwoofer_level", "dialog_level"}:
+            # These adjustments have a separate enable state. Some receivers
+            # ignore a level change while that state is off.
+            enabled = float(value) != 0
+            if control_id == "subwoofer_level":
+                switch = self._profile.control("subwoofer_switch")
+                enable_prefix = switch.prefix if switch is not None else "PSSWR "
+            else:
+                enable_prefix = spec.prefix
+            if enabled:
+                await self._send(f"{enable_prefix}ON")
+                await asyncio.sleep(0.25)
+                await self._send(f"{spec.prefix}{argument}")
+            else:
+                await self._send(f"{spec.prefix}{argument}")
+                await self._send(f"{enable_prefix}OFF")
             return
         await self._send(f"{spec.prefix}{argument}")
 

@@ -30,6 +30,11 @@ async def async_setup_entry(
         entities.append(DenonAvrEqApply(coordinator))
         entities.append(DenonAvrEqCurveCopy(coordinator))
         entities.append(DenonAvrEqSetDefaults(coordinator))
+    # Amp Assign has no discrete state/control token on AVR-X1400H. These
+    # buttons run the documented on-screen-menu fallback specific to its menu.
+    if coordinator.device.discovery.device.model_name == "AVR-X1400H":
+        entities.append(DenonAvrAmpAssign(coordinator, "front_b"))
+        entities.append(DenonAvrAmpAssign(coordinator, "front_height"))
     async_add_entities(entities)
 
 
@@ -77,3 +82,18 @@ class DenonAvrEqSetDefaults(DenonAvrEntity, ButtonEntity):
 
     async def async_press(self) -> None:
         await self.coordinator.device.graphic_eq.set_defaults()
+
+
+class DenonAvrAmpAssign(DenonAvrEntity, ButtonEntity):
+    """Run the AVR-X1400H Amp Assign on-screen-menu fallback."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:audio-input-stereo-minijack"
+
+    def __init__(self, coordinator: DenonAvrCoordinator, mode: str) -> None:
+        super().__init__(coordinator, f"button_amp_assign_{mode}", sub_device="speakers")
+        self._mode = mode
+        self._attr_name = f"Amp Assign {mode.replace('_', ' ').title()}"
+
+    async def async_press(self) -> None:
+        await self.coordinator.device.async_set_amp_assign_from_menu(self._mode)
