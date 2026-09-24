@@ -333,7 +333,7 @@
       "speaker_channel": {
         "queries": ["CV?", "SSLEV ?", "SSSPC ?", "SSCFR ?", "SSSDE ?"],
         "on": ["MS", "SI"],
-        "debounce": 1.2
+        "debounce": 2
       },
       "quick_select_audio": {
         "queries": ["PSREFLEV ?"],
