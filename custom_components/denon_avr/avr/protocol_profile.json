@@ -607,7 +607,7 @@
       "prefix": "PSSWR ",
       "on": "ON",
       "off": "OFF",
-      "doc": "Subwoofer level adjustment enable."
+      "doc": "Subwoofer output switch for Direct/Stereo; distinct from the PSSWL ON/OFF subwoofer level adjustment."
     },
     "subwoofer_level": {
       "group": "speaker",

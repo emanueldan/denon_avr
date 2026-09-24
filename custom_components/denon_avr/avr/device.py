@@ -849,17 +849,16 @@ class DenonAvrDevice:
             # These adjustments have a separate enable state. Some receivers
             # ignore a level change while that state is off.
             enabled = float(value) != 0
-            if control_id == "subwoofer_level":
-                switch = self._profile.control("subwoofer_switch")
-                enable_prefix = switch.prefix if switch is not None else "PSSWR "
-            else:
-                enable_prefix = spec.prefix
+            enable_prefix = spec.prefix
             if enabled:
                 await self._send(f"{enable_prefix}ON")
-                await asyncio.sleep(0.25)
                 await self._send(f"{spec.prefix}{argument}")
             else:
+                if control_id == "subwoofer_level":
+                    # The AVR can reject the zero level while adjustment is off.
+                    await self._send(f"{enable_prefix}ON")
                 await self._send(f"{spec.prefix}{argument}")
+                await asyncio.sleep(0.25)
                 await self._send(f"{enable_prefix}OFF")
             return
         await self._send(f"{spec.prefix}{argument}")
