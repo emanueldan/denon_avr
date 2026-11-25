@@ -55,8 +55,9 @@ If upstream renames something the local code relies on (`_sync._parser`,
 `_discovery_service._parser`, `_dispatch`, `refresh.groups`, factory keys), `test_local_mods.py`
 and `LocalDenonAvrDevice.__init__` fail loudly instead of silently dropping a change.
 
-Home Assistant installs this fork through HACS (custom repository), so an HACS update never
-overwrites the local changes with upstream's code.
+Install Home Assistant's copy **from this fork** (copy `custom_components/denon_avr`, or add
+this repository to HACS as a custom repository): installing upstream's release directly would
+overwrite the local changes.
 
 The overlay applies only to `LocalDenonAvrDevice` (the device Home Assistant uses):
 upstream's own tests and golden files keep running against upstream's profile and stay
