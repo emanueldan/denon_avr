@@ -33,6 +33,7 @@ async def async_setup_entry(
             coordinator, e.params["control_id"]
         ),
         "sound_mode": lambda e: DenonAvrSoundModeSensor(coordinator),
+        "amp_assign": lambda e: DenonAvrAmpAssignSensor(coordinator),
         "volume_db": lambda e: DenonAvrVolumeSensor(coordinator),
         "amp_mode": lambda e: DenonAvrAmpModeSensor(coordinator),
         "subwoofer_setup": lambda e: DenonAvrSubwooferSetupSensor(coordinator, e.params["which"]),
@@ -61,6 +62,21 @@ class DenonAvrReadonlySensor(DenonAvrEntity, SensorEntity):
     @property
     def native_value(self) -> str | None:
         return self.coordinator.data.readonly.get(self._control_id)
+
+
+class DenonAvrAmpAssignSensor(DenonAvrEntity, SensorEntity):
+    """Local mod: expose the Amp Assign mode pushed by AVR-X1400H."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_name = "Amp Assign"
+
+    def __init__(self, coordinator: DenonAvrCoordinator) -> None:
+        super().__init__(coordinator, "sensor_amp_assign", sub_device="speakers")
+
+    @property
+    def native_value(self) -> str | None:
+        # SSPAAMOD push first, else derived from the speaker setup (see the device).
+        return self.coordinator.device.amp_assign_label()
 
 
 class DenonAvrSoundModeSensor(DenonAvrEntity, SensorEntity):

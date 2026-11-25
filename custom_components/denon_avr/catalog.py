@@ -49,6 +49,12 @@ def channel_codes(device) -> list[str]:
     return codes
 
 
+def _is_x1400h(device) -> bool:
+    """Local mod: the Amp Assign menu fallback is specific to the AVR-X1400H."""
+
+    return device.discovery.device.model_name == "AVR-X1400H"
+
+
 def build(device, known_keys: frozenset[str] | set[str] = frozenset()) -> list[EntityEntry]:
     """Every entity for this receiver, in a stable order (platform by platform)."""
 
@@ -80,6 +86,11 @@ def build(device, known_keys: frozenset[str] | set[str] = frozenset()) -> list[E
         add(EntityEntry("button", "eq_apply", "button_eq_apply", "eq"))
         add(EntityEntry("button", "eq_curve_copy", "button_eq_curve_copy", "eq"))
         add(EntityEntry("button", "eq_set_defaults", "button_eq_set_defaults", "eq"))
+    # Local mod: Amp Assign has no discrete state/control token on AVR-X1400H.
+    # These buttons run the documented on-screen-menu fallback specific to its menu.
+    if _is_x1400h(device) or "button_amp_assign_front_b" in known_keys:
+        add(EntityEntry("button", "amp_assign", "button_amp_assign_front_b", "speakers", params={"mode": "front_b"}))
+        add(EntityEntry("button", "amp_assign", "button_amp_assign_front_height", "speakers", params={"mode": "front_height"}))
 
     # media_player -------------------------------------------------------------
     for zone in discovery.zones:
@@ -144,6 +155,11 @@ def build(device, known_keys: frozenset[str] | set[str] = frozenset()) -> list[E
         if items or f"select_current_{cid}" in known_keys:
             add(EntityEntry("select", "current_input_setting", f"select_current_{cid}", "video",
                             params={"collection": cid}))
+    # Local mod: AVR-X1400H Amp Assign select (direct SSPAAMOD command). It takes
+    # over the unique_id of the Web Control amp_assign select, which this
+    # receiver generation does not have.
+    if _is_x1400h(device):
+        add(EntityEntry("select", "amp_assign_x1400h", "select_amp_assign", "speakers"))
     # Speaker layout assign mode (Web Control): staged select + Apply / Discard.
     if layout or "select_speaker_layout_assign" in known_keys:
         add(EntityEntry("select", "speaker_layout_assign", "select_speaker_layout_assign", "speakers"))
@@ -152,6 +168,8 @@ def build(device, known_keys: frozenset[str] | set[str] = frozenset()) -> list[E
         if not section.supported:
             continue
         for control in section.controls():
+            if control["id"] == "amp_assign" and _is_x1400h(device):
+                continue  # Local mod: the X1400H select above owns this unique_id.
             known = f"select_{control['id']}" in known_keys
             if control.get("kind") == "select" and (section.present(control["id"]) or known):
                 add(EntityEntry("select", "web_select", f"select_{control['id']}", sub,
@@ -161,6 +179,9 @@ def build(device, known_keys: frozenset[str] | set[str] = frozenset()) -> list[E
     for control_id in profile.readonly:
         add(EntityEntry("sensor", "readonly", f"sensor_{control_id}", params={"control_id": control_id}))
     add(EntityEntry("sensor", "sound_mode", "sensor_sound_mode"))
+    # Local mod: AVR-X1400H pushes its active Amp Assign mode (SSPAAMOD).
+    if _is_x1400h(device) or "sensor_amp_assign" in known_keys:
+        add(EntityEntry("sensor", "amp_assign", "sensor_amp_assign", "speakers"))
     if discovery.device.versions.get("moduleType") or "sensor_network_module" in known_keys:
         add(EntityEntry("sensor", "network_module", "sensor_network_module"))
     add(EntityEntry("sensor", "volume_db", "sensor_volume_db"))

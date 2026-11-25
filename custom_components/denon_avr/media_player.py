@@ -139,11 +139,9 @@ class DenonAvrMediaPlayer(DenonAvrEntity, MediaPlayerEntity):
         zone = self._zone_state
         if zone.volume_raw is None:
             return None
-        # Use the same ceiling as the set path so a set/read round trip is stable.
-        ceiling = self._device.volume_effective_max(self._zone.id)
-        if not ceiling:
-            return None
-        return max(0.0, min(1.0, zone.volume_raw / ceiling))
+        # Local mod: fixed scale like the core denonavr integration (raw / 100), the same
+        # scale as the set path (ControlService.level_to_raw), so a round trip is stable.
+        return max(0.0, min(1.0, zone.volume_raw / 100.0))
 
     @property
     def is_volume_muted(self) -> bool | None:

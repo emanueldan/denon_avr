@@ -29,6 +29,7 @@ async def async_setup_entry(
         "speaker_layout_apply": lambda e: DenonAvrSpeakerLayoutApply(coordinator),
         "speaker_layout_restore": lambda e: DenonAvrSpeakerLayoutRestore(coordinator),
         "speaker_layout_discard": lambda e: DenonAvrSpeakerLayoutDiscard(coordinator),
+        "amp_assign": lambda e: DenonAvrAmpAssign(coordinator, e.params["mode"]),
     }
     setup_catalogue_platform(coordinator, "button", factories, async_add_entities)
 
@@ -209,3 +210,19 @@ class DenonAvrSpeakerLayoutDiscard(_SpeakerLayoutButton):
         self._layout.discard()
         _update_layout_issue(self.hass, self.coordinator)
         self.coordinator.async_update_listeners()
+
+
+class DenonAvrAmpAssign(DenonAvrEntity, ButtonEntity):
+    """Local mod: set the AVR-X1400H Amp Assign (direct command, menu fallback)."""
+
+    _attr_entity_category = EntityCategory.CONFIG
+    _attr_icon = "mdi:audio-input-stereo-minijack"
+
+    def __init__(self, coordinator: DenonAvrCoordinator, mode: str) -> None:
+        super().__init__(coordinator, f"button_amp_assign_{mode}", sub_device="speakers")
+        self._mode = mode
+        self._attr_name = f"Amp Assign {mode.replace('_', ' ').title()}"
+
+    async def async_press(self) -> None:
+        # Direct SSPAAMOD command; the menu macro is only the fallback.
+        await self.coordinator.device.async_set_amp_assign(self._mode)

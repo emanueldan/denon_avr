@@ -326,9 +326,6 @@
       "tv_format": {
         "name": "Tv-formaat"
       },
-      "amp_assign": {
-        "name": "Toewijsmodus"
-      },
       "floor_layout": {
         "name": "Vloerindeling"
       },
