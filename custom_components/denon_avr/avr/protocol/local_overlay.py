@@ -7,6 +7,7 @@ other value (lists, strings, numbers) replaces the upstream one.
 
 from __future__ import annotations
 
+import copy
 import json
 from functools import lru_cache
 from pathlib import Path
@@ -37,11 +38,20 @@ def merge_local_overlay(raw: dict[str, Any]) -> dict[str, Any]:
     return _deep_merge(raw, overlay)
 
 
+def _read_merged() -> dict[str, Any]:
+    with _PROFILE_PATH.open(encoding="utf-8") as handle:
+        raw = json.load(handle)
+    return merge_local_overlay(raw)
+
+
+# Read once at import time: Home Assistant imports integrations in an executor, so no
+# file I/O happens later inside the event loop (the device is built in the loop).
+_MERGED_RAW = _read_merged()
+
+
 @lru_cache(maxsize=1)
 def load_local_profile() -> ProtocolProfile:
     """The bundled profile with the local overlay (used by LocalDenonAvrDevice only,
     so upstream's own tests keep running against upstream's profile)."""
 
-    with _PROFILE_PATH.open(encoding="utf-8") as handle:
-        raw = json.load(handle)
-    return ProtocolProfile(merge_local_overlay(raw))
+    return ProtocolProfile(copy.deepcopy(_MERGED_RAW))
