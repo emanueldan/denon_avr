@@ -56,6 +56,19 @@ If upstream renames something the local code relies on (`_sync._parser`,
 `_discovery_service._parser`, `_dispatch`, `refresh.groups`, factory keys), `test_local_mods.py`
 and `LocalDenonAvrDevice.__init__` fail loudly instead of silently dropping a change.
 
+## Installing and updating in Home Assistant
+
+Home Assistant installs this fork through the **Marketplace** as a custom repository
+(`emanueldan/denon_avr`, category Integration), from its GitHub releases
+(`vX.Y.Z-x1400h.N`). Upstream `LaserGuruGuy/denon_avr` is not installed there, so a
+Marketplace update can never replace the local changes with upstream's code. To ship a
+change: push to `main`, let the tests pass, publish a release; Home Assistant then offers
+it as a normal update.
+
+Home Assistant watches upstream once a week (REST sensors on the latest upstream release
+and `main` commit, compared with the upstream version this fork is based on) and shows a
+notification when there is something new to take.
+
 Install Home Assistant's copy **from this fork** (copy `custom_components/denon_avr`, or add
 this repository to HACS as a custom repository): installing upstream's release directly would
 overwrite the local changes.
