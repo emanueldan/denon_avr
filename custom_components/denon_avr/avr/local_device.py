@@ -16,6 +16,7 @@ import aiohttp
 from .device import DenonAvrDevice
 from .models import AvrState
 from .protocol import commands
+from .protocol.local_overlay import load_local_profile
 from .protocol.telnet_parser import TelnetParser
 
 _LOGGER = logging.getLogger(__name__)
@@ -75,6 +76,9 @@ class LocalTelnetParser(TelnetParser):
 
 class LocalDenonAvrDevice(DenonAvrDevice):
     """DenonAvrDevice with the local AVR-X1400H behaviour."""
+
+    # Read by the LOCAL HOOK in DenonAvrDevice.__init__: the profile with the overlay.
+    _profile_loader = staticmethod(load_local_profile)
 
     def __init__(self, session: aiohttp.ClientSession, host: str) -> None:
         super().__init__(session, host)

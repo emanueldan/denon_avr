@@ -11,11 +11,11 @@ code so that new upstream releases merge without (or with trivial) conflicts.
 | `custom_components/denon_avr/avr/local_device.py` | `LocalDenonAvrDevice` (subclass of the facade) and `LocalTelnetParser` |
 | `custom_components/denon_avr/local_entities.py` | Amp Assign select / buttons / sensor, entity tweaks, catalogue additions |
 | `custom_components/denon_avr/avr/protocol/protocol_profile.local.json` | Overlay deep-merged over `protocol_profile.json` at load time |
-| `custom_components/denon_avr/avr/protocol/local_overlay.py` | The overlay loader |
+| `custom_components/denon_avr/avr/protocol/local_overlay.py` | The overlay loader (`load_local_profile`, used only by `LocalDenonAvrDevice`) |
 | `tests/test_local_mods.py` | Tests for all of the above, incl. a check that every hook is present |
 
 Upstream files only carry one or two lines marked `# LOCAL HOOK` (search for it):
-`avr/__init__.py`, `avr/protocol/profile.py`, `coordinator.py`, `catalog.py`, `button.py`,
+`avr/__init__.py`, `avr/device.py` (profile loader), `coordinator.py`, `catalog.py`, `button.py`,
 `sensor.py`, `select.py`, `media_player.py`.
 
 ## What the local changes do
@@ -57,3 +57,7 @@ and `LocalDenonAvrDevice.__init__` fail loudly instead of silently dropping a ch
 
 Home Assistant installs this fork through HACS (custom repository), so an HACS update never
 overwrites the local changes with upstream's code.
+
+The overlay applies only to `LocalDenonAvrDevice` (the device Home Assistant uses):
+upstream's own tests and golden files keep running against upstream's profile and stay
+untouched, so they never conflict on a merge.

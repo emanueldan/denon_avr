@@ -55,6 +55,12 @@ def test_overlay_is_merged_into_the_profile():
     assert groups["front_speaker"]["on"] == ["SSPAAMOD"]  # upstream trigger kept
 
 
+def test_only_the_local_device_gets_the_overlay():
+    assert load_profile().sound_mode_genre_commands["PUR"] == "PURE DIRECT"  # upstream, for upstream's tests
+    assert _device().profile.sound_mode_genre_commands["PUR"] == "AUTO"
+    assert "channel_levels_signal" in _device().profile.refresh_groups
+
+
 def test_upstream_profile_file_is_untouched_by_local_keys():
     raw = json.loads((ROOT / "avr" / "protocol" / "protocol_profile.json").read_text(encoding="utf-8"))
     assert "channel_levels_signal" not in raw["refresh"]["groups"]
@@ -131,7 +137,7 @@ def test_amp_assign_modes():
     ("sensor.py", "sensor_factories(coordinator)"),
     ("select.py", "select_factories(coordinator, factories)"),
     ("media_player.py", "media_player_factories(coordinator)"),
-    ("avr/protocol/profile.py", "merge_local_overlay(raw)"),
+    ("avr/device.py", "_profile_loader"),
     ("avr/__init__.py", "LocalDenonAvrDevice"),
 ])
 def test_local_hooks_are_present(file, needle):

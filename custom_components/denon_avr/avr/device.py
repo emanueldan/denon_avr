@@ -32,7 +32,7 @@ class DenonAvrDevice:
 
     def __init__(self, session: aiohttp.ClientSession, host: str) -> None:
         self._host = host
-        self._profile: ProtocolProfile = load_profile()
+        self._profile: ProtocolProfile = getattr(self, "_profile_loader", load_profile)()  # LOCAL HOOK (see LOCAL_MODS.md)
         self._discovery = Discovery()
         self._state = AvrState()
         self._available = False
