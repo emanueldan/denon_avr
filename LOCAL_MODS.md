@@ -9,7 +9,8 @@ code so that new upstream releases merge without (or with trivial) conflicts.
 | File | What |
 |---|---|
 | `custom_components/denon_avr/avr/local_device.py` | `LocalDenonAvrDevice` (subclass of the facade) and `LocalTelnetParser` |
-| `custom_components/denon_avr/local_entities.py` | Amp Assign select / buttons / sensor, entity tweaks, catalogue additions |
+| `custom_components/denon_avr/local_entities.py` | Amp Assign select / buttons / sensor, entity tweaks |
+| `custom_components/denon_avr/local_catalog.py` | Catalogue additions (HA-free, like `catalog.py`) |
 | `custom_components/denon_avr/avr/protocol/protocol_profile.local.json` | Overlay deep-merged over `protocol_profile.json` at load time |
 | `custom_components/denon_avr/avr/protocol/local_overlay.py` | The overlay loader (`load_local_profile`, used only by `LocalDenonAvrDevice`) |
 | `tests/test_local_mods.py` | Tests for all of the above, incl. a check that every hook is present |

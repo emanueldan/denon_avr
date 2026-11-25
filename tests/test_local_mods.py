@@ -142,3 +142,18 @@ def test_amp_assign_modes():
 ])
 def test_local_hooks_are_present(file, needle):
     assert needle in (ROOT / file).read_text(encoding="utf-8"), f"LOCAL HOOK missing in {file}"
+
+
+# Catalogue -----------------------------------------------------------------------
+
+def test_catalogue_adds_the_amp_assign_entities_only_for_the_x1400h():
+    from types import SimpleNamespace
+
+    local_catalog = conftest.load_ha_module("local_catalog")
+
+    def device(model):
+        return SimpleNamespace(discovery=SimpleNamespace(device=SimpleNamespace(model_name=model)))
+
+    keys = {e.key for e in local_catalog.adjust_catalog(device("AVR-X1400H"), set(), [])}
+    assert keys == {"select_amp_assign", "button_amp_assign_front_b", "button_amp_assign_front_height", "sensor_amp_assign"}
+    assert local_catalog.adjust_catalog(device("AVC-X3900H"), set(), []) == []

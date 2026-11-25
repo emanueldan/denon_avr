@@ -193,7 +193,7 @@ def build(device, known_keys: frozenset[str] | set[str] = frozenset()) -> list[E
             known = f"switch_{control['id']}" in known_keys
             if control.get("kind") == "switch" and (video.present(control["id"]) or known):
                 add(EntityEntry("switch", "web_switch", f"switch_{control['id']}", "video", params={"control": control}))
-    from .local_entities import adjust_catalog  # LOCAL HOOK (see LOCAL_MODS.md)
+    from .local_catalog import adjust_catalog  # LOCAL HOOK (see LOCAL_MODS.md)
     return adjust_catalog(device, known_keys, entries)  # LOCAL HOOK
 
 
