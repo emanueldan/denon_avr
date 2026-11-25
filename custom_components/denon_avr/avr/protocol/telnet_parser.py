@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 import re
-from time import monotonic
 
 from .codec import decode_centered, decode_half_step
 from ..models import (
@@ -137,28 +136,13 @@ class TelnetParser:
             # Current main zone quick select preset number (0 = none).
             token = line[7:].strip()
             if token.isdigit():
-                number = int(token)
-                # Local mod: AVR-X1400H reports MSQUICK0 even after recalling a
-                # preset. Once Home Assistant recalled one, retain that known
-                # local selection instead of clearing it with this ambiguous reply.
-                if number == 0 and state.values.get("quick_select"):
-                    return False
-                state.values["quick_select"] = number
+                state.values["quick_select"] = int(token)
                 return True
             return False
         if line.startswith("MS"):
             return self._set_sound_mode(line[2:], state)
         if line.startswith("SI"):
-            # Local mod: a real source change clears the input mode and the
-            # quick select (unless a quick select recall is still pending).
-            source = line[2:].strip()
-            zone = state.zone("main")
-            if source != zone.source:
-                zone.source = source
-                state.values.pop("input_mode", None)
-                pending_until = state.values.pop("quick_select_pending_until", 0)
-                if monotonic() > pending_until:
-                    state.values.pop("quick_select", None)
+            state.zone("main").source = line[2:].strip()
             return True
         if line.startswith("SV"):
             state.values["video_select"] = line[2:].strip()
@@ -186,8 +170,6 @@ class TelnetParser:
             return False
         if line.startswith("SSQSNZMA"):
             return self._set_quick_select_name(line[8:])
-        if line.startswith("SSPAAMOD"):
-            return self._set_amp_assign(line[8:], state)
         if line.startswith("SSSPC"):
             return self._set_speaker_config(line[5:], state)
         if line.startswith("OPSMLALL"):
@@ -462,16 +444,6 @@ class TelnetParser:
         if not digits or not name:
             return False
         self._discovery.quick_select_names[int(digits)] = name
-        return True
-
-    def _set_amp_assign(self, remainder: str, state: AvrState) -> bool:
-        """Local mod: store the active Amp Assign mode pushed by the AVR."""
-
-        labels = {"FRB": "Front B", "FRH": "Front Height"}
-        label = labels.get(remainder.strip())
-        if label is None:
-            return False
-        state.values["amp_assign"] = label
         return True
 
     def _set_speaker_config(self, remainder: str, state: AvrState) -> bool:

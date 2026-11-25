@@ -39,7 +39,6 @@ async def async_setup_entry(
         "sound_mode_group": lambda e: DenonAvrSoundModeGroupSelect(coordinator),
         "sound_mode": lambda e: DenonAvrSoundModeSelect(coordinator),
         "quick_select": lambda e: DenonAvrQuickSelect(coordinator),
-        "amp_assign_x1400h": lambda e: DenonAvrAmpAssignSelect(coordinator),
         "crossover": lambda e: DenonAvrCrossover(coordinator, e.params["group"], e.params["channels"], e.enabled_default),
         "crossover_speaker_selection": lambda e: DenonAvrCrossoverSpeakerSelection(coordinator),
         "crossover_all": lambda e: DenonAvrCrossoverAll(coordinator),
@@ -57,6 +56,8 @@ async def async_setup_entry(
             sub_device=e.sub_device,
         ),
     }
+    from .local_entities import select_factories  # LOCAL HOOK (see LOCAL_MODS.md)
+    factories.update(select_factories(coordinator, factories))  # LOCAL HOOK
     setup_catalogue_platform(coordinator, "select", factories, async_add_entities)
 
 
@@ -76,19 +77,6 @@ class DenonAvrSelect(DenonAvrEntity, SelectEntity):
             coordinator.device.discovery, spec
         )
         self._attr_options = options
-
-    @property
-    def options(self) -> list[str]:
-        # Local mod: on the TV source with ARC/eARC active, offer only that mode.
-        if self._spec.id == "input_mode":
-            state = self.coordinator.data
-            if state.zone("main").source == "TV":
-                value = state.values.get("input_mode")
-                if value in {"ARC", "EARC"}:
-                    label = self._value_to_label.get(value)
-                    if label:
-                        return [label]
-        return self._attr_options
 
     @property
     def current_option(self) -> str | None:
@@ -352,35 +340,6 @@ class DenonAvrSubwooferCount(DenonAvrEntity, SelectEntity):
             await self.coordinator.device.async_set_speaker_size("SWF", token)
 
 
-class DenonAvrAmpAssignSelect(DenonAvrEntity, SelectEntity):
-    """Local mod: AVR-X1400H Amp Assign (Front B / Front Height) via SSPAAMOD.
-
-    Choosing Front B also puts the front speakers back on A + B, as the
-    dashboard buttons do.
-    """
-
-    _attr_entity_category = EntityCategory.CONFIG
-    _attr_name = "Amp Assign"
-    _attr_icon = "mdi:speaker-multiple"
-    _MODES = {"Front B": "front_b", "Front Height": "front_height"}
-
-    def __init__(self, coordinator: DenonAvrCoordinator) -> None:
-        super().__init__(coordinator, "select_amp_assign", sub_device="speakers")
-        self._attr_options = list(self._MODES)
-
-    @property
-    def current_option(self) -> str | None:
-        label = self.coordinator.device.amp_assign_label()
-        return label if label in self._MODES else None
-
-    async def async_select_option(self, option: str) -> None:
-        mode = self._MODES.get(option)
-        if mode is None:
-            raise ServiceValidationError(f"Unsupported Amp Assign option: {option}")
-        await self.coordinator.device.async_set_amp_assign(mode)
-        self.coordinator.async_update_listeners()
-
-
 class DenonAvrQuickSelect(DenonAvrEntity, SelectEntity):
     """Recall the receiver's main zone quick select presets."""
 
@@ -401,19 +360,9 @@ class DenonAvrQuickSelect(DenonAvrEntity, SelectEntity):
     @property
     def current_option(self) -> str | None:
         number = self.coordinator.data.values.get("quick_select")
-        if number:
-            selected = self._names.get(int(number))
-            if selected:
-                return selected
-        # Local mod: without a known preset, derive one from the input mode.
-        input_mode = self.coordinator.data.values.get("input_mode")
-        default_name = {
-            "DIGITAL": "Media",
-            "ARC": "TV Audio",
-            "AUTO": "Spotify",
-        }.get(input_mode, "Media")
-        options = self.options
-        return default_name if default_name in options else (options[0] if options else None)
+        if not number:
+            return None
+        return self._names.get(int(number))
 
     async def async_select_option(self, option: str) -> None:
         for number, name in self._names.items():

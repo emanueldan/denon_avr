@@ -41,16 +41,11 @@ class ControlService:
     async def set_system_power(self, on: bool) -> None:
         await self._send(commands.system_power(self._profile, on))
 
-    # Local mod: fixed volume scale like the core denonavr integration (level = raw / 100,
-    # 0.30 = 30 = -50 dB), so sliders, scripts and dashboards keep their meaning when the
-    # receiver's MVMAX changes. set_volume_raw still caps at the reachable maximum.
-    VOLUME_LEVEL_SCALE = 100.0
-
     def level_to_raw(self, zone_id: str, level: float) -> float:
-        """A 0..1 level on the raw volume scale (fixed scale, see VOLUME_LEVEL_SCALE)."""
+        """A 0..1 level on the raw volume scale, using the reachable maximum."""
 
         level = max(0.0, min(1.0, level))
-        return round(level * self.VOLUME_LEVEL_SCALE * 2) / 2
+        return round(level * self._effective_max(zone_id) * 2) / 2
 
     async def set_volume_level(self, zone_id: str, level: float) -> None:
         await self.set_volume_raw(zone_id, self.level_to_raw(zone_id, level))

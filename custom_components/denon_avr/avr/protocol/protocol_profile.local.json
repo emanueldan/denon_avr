@@ -1,0 +1,41 @@
+{
+  "local_doc": "Local AVR-X1400H overlay, deep-merged over protocol_profile.json at load time (dicts merge key by key, every other value replaces). Keep upstream's file untouched; see LOCAL_MODS.md.",
+  "sound_mode_wire_overrides": {
+    "Dolby Surround": "DOLBY SURROUND",
+    "DTS Neural:X": "DTS SURROUND",
+    "DTS Virtual:X": "DTS SURROUND"
+  },
+  "sound_mode_genre_commands": {
+    "doc": "Local: the AVR-X1400H enters the Pure group with 'AUTO' selected via MSAUTO; PURE and PURE DIRECT are ignored as group commands.",
+    "PUR": "AUTO"
+  },
+  "refresh": {
+    "groups": {
+      "speaker_channel": {
+        "debounce": 2
+      },
+      "quick_select_audio": {
+        "doc": "Local: Quick Select recalls and Amp Assign changes re-read the Audyssey reference level (the AVR-X1400H does not push it).",
+        "queries": ["PSREFLEV ?"],
+        "on": [],
+        "debounce": 1.2
+      },
+      "quick_select_input_mode": {
+        "doc": "Local: a source change re-reads the input mode (SD).",
+        "queries": ["SD?"],
+        "on": ["SI"],
+        "debounce": 0.5
+      },
+      "channel_levels_signal": {
+        "doc": "Local: the receiver reports channel levels (CV) only while an audio signal plays (no signal: just CVEND). Re-read them when the input signal changes, and once more after the HDMI handshake.",
+        "on": ["SSINFAISSIG"],
+        "queries": ["CV?"],
+        "debounce": 1.5,
+        "again": 3
+      },
+      "front_speaker": {
+        "queries": ["PSFRONT?", "SSSPC ?", "CV?"]
+      }
+    }
+  }
+}

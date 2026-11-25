@@ -2,16 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
-import logging
 from collections.abc import Callable
 from functools import partial
-from time import monotonic
 
 import aiohttp
 
 from .models import AvrState, DeviceInfo, Discovery
-from .protocol import commands
 from .protocol.profile import ProtocolProfile, load_profile
 from .protocol.telnet_parser import TelnetParser
 from .services.control import ControlService
@@ -24,15 +20,11 @@ from .services.webconfig_doc import WebConfigSectionController
 from .transport import (
     GoformClient,
     HeosClient,
-    TcpClient,
     TelnetClient,
     UpnpClient,
     WebConfigClient,
     async_probe,
 )
-
-
-_LOGGER = logging.getLogger(__name__)
 
 
 class DenonAvrDevice:
@@ -113,9 +105,6 @@ class DenonAvrDevice:
         )
         # Auxiliary HEOS channel for network now-playing media and album art.
         self._heos = HeosClient(host, on_update=self._sync.handle_now_playing)
-        # Local mod: the documented menu commands are stateful. Serialize Amp
-        # Assign fallback macros so their navigation commands cannot overlap.
-        self._amp_assign_menu_lock = asyncio.Lock()
 
     # Public properties ----------------------------------------------------
 
@@ -349,221 +338,16 @@ class DenonAvrDevice:
         await self._control.select_source(zone_id, name)
 
     async def async_select_sound_mode(self, name: str) -> None:
-        if name == "Dolby Surround":
-            await self._select_dolby_surround(name)
-            return
         await self._control.select_sound_mode(name)
 
-    async def _select_dolby_surround(self, name: str) -> None:
-        """Local mod: AVR-X1400H reports MSDOLBY SURROUND but ignores it as a setter.
-
-        MOVIE cycles the receiver's selectable modes in this context, so press it
-        until the receiver confirms Dolby Surround.
-        """
-
-        spec = self._profile.control("sound_mode")
-        if spec is None:
-            return
-        if self._state.values.get("sound_mode_display") == name:
-            return
-        query = self._profile.introspection_query("current_sound_modes")
-        movie = self._profile.sound_mode_genre_commands.get("MOV")
-        if not query or not movie:
-            raise RuntimeError("Cannot select Dolby Surround without MOVIE and OPSML")
-        for _ in range(max(1, len(self._discovery.current_sound_modes))):
-            self._state.values.pop("sound_mode_display", None)
-            await self._telnet.async_send(f"{spec.prefix}{movie}")
-            await asyncio.sleep(0.4)
-            await self._telnet.async_send(query)
-            for _ in range(12):
-                selected = self._state.values.get("sound_mode_display")
-                if selected:
-                    break
-                await asyncio.sleep(0.1)
-            else:
-                raise TimeoutError("Receiver did not confirm the selected sound mode")
-            if selected == name:
-                return
-        raise RuntimeError("Dolby Surround was not selected by the receiver")
-
     async def async_select_quick_select(self, number: int) -> None:
-        number = int(number)
-        self._state.values["quick_select_pending_until"] = monotonic() + 5
-        try:
-            await self._control.select_quick_select(number)
-        except Exception:
-            self._state.values.pop("quick_select_pending_until", None)
-            raise
-        # Local mod: some AVR models do not echo MSQUICK after a recall. Publish
-        # the successfully requested preset immediately; a later AVR push or poll
-        # remains authoritative and can correct this state if needed.
-        self._state.values["quick_select"] = number
-        self._notifier.schedule()
-        # Quick Select recalls can include a distinct speaker calibration and
-        # Audyssey reference offset, but AVR-X1400H does not push these values.
-        # Re-query them after the receiver has applied the preset.
-        self._sync._schedule_refresh("speaker_channel")
-        self._sync._schedule_refresh("quick_select_audio")
-
-    # Local mod: AVR-X1400H Amp Assign -------------------------------------------
-    _AMP_ASSIGN = {
-        # mode: (SSPAAMOD token, label pushed back by the receiver, GET_AVRSTS value)
-        "front_b": ("FRB", "Front B", "FrontB"),
-        "front_height": ("FRH", "Front Height", "FrontHi"),
-    }
-
-    def amp_assign_label(self) -> str | None:
-        """Local mod: the current Amp Assign mode as a label (Front B / Front Height).
-
-        The SSPAAMOD push wins; before the first push the speaker setup tells it:
-        Front Height is absent (NON) with Front B and configured with Front Height.
-        """
-
-        value = self._state.values.get("amp_assign")
-        if value is not None:
-            return str(value)
-        front_height = self._state.speaker_sizes.get("FRH")
-        if front_height == "NON":
-            return "Front B"
-        if front_height is not None:
-            return "Front Height"
-        return None
-
-    async def _read_amp_assign_1256(self) -> str | None:
-        """Local mod: read the Amp Assign mode via GET_AVRSTS (port 1256, read only)."""
-
-        client = TcpClient(self._host)
-        try:
-            await client.connect()
-            setup = await client.async_read_setup()
-            return (setup.get("status") or {}).get("AmpAssign")
-        except Exception as err:  # noqa: BLE001 - verification only
-            _LOGGER.debug("Amp Assign read over port 1256 failed: %s", err)
-            return None
-        finally:
-            try:
-                await client.close()
-            except Exception:  # noqa: BLE001
-                pass
-
-    async def async_set_amp_assign(self, mode: str) -> None:
-        """Local mod: set Amp Assign with the direct command SSPAAMOD <FRB|FRH>.
-
-        Verified live on AVR-X1400H (2026-11-25): the receiver switches within
-        2 s, pushes SSPAAMOD and keeps the current source (no on-screen menu).
-        The receiver's confirmation is awaited (push, else GET_AVRSTS); only if it
-        does not confirm, the on-screen-menu macro runs as a fallback. Front B then
-        gets the A + B front speaker selection back (the change resets it), as the
-        dashboard script did, and the speaker values are re-read.
-        """
-
-        spec = self._AMP_ASSIGN.get(mode)
-        if spec is None:
-            raise ValueError(f"Unsupported Amp Assign mode: {mode}")
-        token, label, avrsts = spec
-        use_menu = False
-        async with self._amp_assign_menu_lock:
-            if self.amp_assign_label() != label:
-                self._state.values.pop("amp_assign", None)
-                await self._telnet.async_send(f"SSPAAMOD {token}")
-                confirmed = False
-                for _ in range(40):
-                    await asyncio.sleep(0.1)
-                    if self._state.values.get("amp_assign") == label:
-                        confirmed = True
-                        break
-                if not confirmed:
-                    confirmed = await self._read_amp_assign_1256() == avrsts
-                    if confirmed:
-                        self._state.values["amp_assign"] = label
-                        self._notifier.schedule()
-                if not confirmed:
-                    _LOGGER.warning("SSPAAMOD %s not confirmed; using the on-screen-menu fallback", token)
-                    use_menu = True
-        if use_menu:
-            # The macro takes the same lock, so it runs after the block above.
-            await self.async_set_amp_assign_from_menu(mode)
-        if mode == "front_b":
-            # The Amp Assign change resets the front speaker selection to A.
-            await asyncio.sleep(1.0)
-            await self._control.set_control("front_speaker", "A+B")
-        self._sync._schedule_refresh("speaker_channel")
-        self._sync._schedule_refresh("quick_select_audio")
-        self._sync._schedule_refresh("front_speaker")
-
-    async def async_set_amp_assign_from_menu(self, mode: str) -> None:
-        """Local mod: set Amp Assign through the documented on-screen-menu commands.
-
-        AVR-X1400H does not expose a discrete, readable Amp Assign command.
-        Its menu cursor is preserved after closing the setup screen, therefore
-        the macro explicitly returns to the Audio root entry before it exits.
-        """
-
-        directions = {"front_b": "MNCLT", "front_height": "MNCRT"}
-        direction = directions.get(mode)
-        if direction is None:
-            raise ValueError(f"Unsupported Amp Assign mode: {mode}")
-
-        menu: list[tuple[str, float]] = [
-            # Restore the stable Audio entry using the AVR UI behavior the
-            # receiver exposes: return through the hierarchy, open Option.
-            ("MNMEN OFF", 0.35),
-            ("MNOPT", 0.35),
-            ("MNMEN OFF", 0.35),
-            ("MNMEN ON", 0.35),
-            ("MNCDN", 0.35),
-            ("MNCDN", 0.35),
-            ("MNCDN", 0.35),
-            ("MNENT", 0.35),
-            ("MNCDN", 0.35),
-            ("MNENT", 0.35),
-            ("MNENT", 0.35),
-            # The AVR needs longer to enter the editable option list.
-            ("MNENT", 0.5),
-            (direction, 0.35),
-            ("MNENT", 0.35),
-            ("MNMEN OFF", 0.35),
-        ]
-
-        async with self._amp_assign_menu_lock:
-            for command, delay in menu:
-                await self._telnet.async_send(command)
-                await asyncio.sleep(delay)
-        # Amp Assign changes the active speaker layout and can alter channel
-        # values. The AVR does not publish every dependent setting on its own.
-        self._sync._schedule_refresh("speaker_channel")
-        self._sync._schedule_refresh("quick_select_audio")
+        await self._control.select_quick_select(number)
 
     async def async_select_sound_mode_group(self, code: str) -> None:
         await self._control.select_sound_mode_group(code)
 
     async def async_set_control(self, control_id: str, value: object) -> None:
-        if control_id in {"subwoofer_level", "dialog_level"}:
-            await self._set_level_with_enable(control_id, value)
-            return
         await self._control.set_control(control_id, value)
-
-    async def _set_level_with_enable(self, control_id: str, value: object) -> None:
-        """Local mod: these levels have a separate enable state (PSSWL/PSDIL ON/OFF).
-
-        Some receivers ignore a level change while that state is off.
-        """
-
-        spec = self._profile.control(control_id)
-        command = commands.control(self._profile, control_id, value)
-        if spec is None or command is None:
-            return
-        enable_prefix = spec.prefix
-        if float(value) != 0:
-            await self._telnet.async_send(f"{enable_prefix}ON")
-            await self._telnet.async_send(command)
-            return
-        if control_id == "subwoofer_level":
-            # The AVR can reject the zero level while adjustment is off.
-            await self._telnet.async_send(f"{enable_prefix}ON")
-        await self._telnet.async_send(command)
-        await asyncio.sleep(0.25)
-        await self._telnet.async_send(f"{enable_prefix}OFF")
 
     async def async_set_channel_trim(self, code: str, db: float) -> None:
         await self._control.set_channel_trim(code, db)

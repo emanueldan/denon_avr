@@ -208,4 +208,6 @@ def load_profile() -> ProtocolProfile:
 
     with _PROFILE_PATH.open(encoding="utf-8") as handle:
         raw = json.load(handle)
+    from .local_overlay import merge_local_overlay  # LOCAL HOOK (see LOCAL_MODS.md)
+    raw = merge_local_overlay(raw)  # LOCAL HOOK
     return ProtocolProfile(raw)

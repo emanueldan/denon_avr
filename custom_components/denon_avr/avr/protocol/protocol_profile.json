@@ -25,17 +25,14 @@
   "sound_mode_wire_overrides": {
     "doc": "Deterministic display-name -> MS wire token map for modes whose wire token differs from the upper-cased display name. These tokens were observed live from the receiver (it reports them via MS). For every other mode the upper-cased display name is used.",
     "Multi Ch Stereo": "MCH STEREO",
-    "Dolby Audio - Dolby Surround": "DOLBY AUDIO-DSUR",
-    "Dolby Surround": "DOLBY SURROUND",
-    "DTS Neural:X": "DTS SURROUND",
-    "DTS Virtual:X": "DTS SURROUND"
+    "Dolby Audio - Dolby Surround": "DOLBY AUDIO-DSUR"
   },
   "sound_mode_genre_commands": {
-    "doc": "How to switch the receiver to a sound mode genre group. Keyed by the genre code the receiver uses (from OPSMLALL/SSSMG); the value is the MS command token. Verified live: MOVIE/MUSIC/GAME work; the AVR-X1400H enters the Pure group with 'AUTO' selected via MSAUTO. PURE and PURE DIRECT are ignored as group commands (local mod). This is fixed protocol grammar; the codes and display names still come from the device.",
+    "doc": "How to switch the receiver to a sound mode genre group. Keyed by the genre code the receiver uses (from OPSMLALL/SSSMG); the value is the MS command token. Verified live: MOVIE/MUSIC/GAME work; the Pure group needs 'PURE DIRECT' (plain 'PURE' does not). This is fixed protocol grammar; the codes and display names still come from the device.",
     "MOV": "MOVIE",
     "MUS": "MUSIC",
     "GAM": "GAME",
-    "PUR": "AUTO"
+    "PUR": "PURE DIRECT"
   },
   "grammar": {
     "line_terminator": "\r",
@@ -352,31 +349,12 @@
       "speaker_channel": {
         "queries": ["CV?", "SSLEV ?", "SSSPC ?", "SSCFR ?", "SSSDE ?"],
         "on": ["MS", "SI"],
-        "debounce": 2
-      },
-      "quick_select_audio": {
-        "doc": "Local mod: Quick Select recalls / Amp Assign changes re-read the Audyssey reference level (AVR-X1400H does not push it).",
-        "queries": ["PSREFLEV ?"],
-        "on": [],
         "debounce": 1.2
-      },
-      "channel_levels_signal": {
-        "doc": "Local mod: the receiver reports channel levels (CV) only while an audio signal plays (no signal: just CVEND). Re-read them when the input signal changes, and once more after the HDMI handshake.",
-        "on": ["SSINFAISSIG"],
-        "queries": ["CV?"],
-        "debounce": 1.5,
-        "again": 3
-      },
-      "quick_select_input_mode": {
-        "doc": "Local mod: a source change re-reads the input mode (SD).",
-        "queries": ["SD?"],
-        "on": ["SI"],
-        "debounce": 0.5
       },
       "inputs_web": {"doc": "A source change re-reads the video web section (per-input 4K/8K format and HDCP, current input). Web documents have no push.", "on": ["SI"], "queries": [], "web": ["video"], "debounce": 1.0},
       "speakers_web": {"doc": "A speaker setup line (also our own SSSPC/SSCFR re-queries, and PSSP: pushes; a Speaker Preset switch has its own group) re-reads the speakers web section: speaker layout, crossover and LPF value lists.", "on": ["SSSPC", "SSCFR", "PSSP:"], "queries": [], "web": ["speakers"], "debounce": 1.5},
       "graphic_eq_web": {"doc": "A graphic EQ on/off line, or a room correction (MultEQ) change that grays the EQ menu in or out, re-reads the graphic EQ curve and its availability.", "on": ["PSGEQ", "PSMULTEQ:"], "queries": [], "web": ["graphic_eq"], "debounce": 1.0},
-      "front_speaker": {"doc": "A speaker layout (amp assign) change can silently reset the front speaker A/B selection (seen live): SSPAAMOD is pushed, so re-read it (SSFRSDST is part of the answer to PSFRONT?).", "on": ["SSPAAMOD"], "queries": ["PSFRONT?", "SSSPC ?", "CV?"], "debounce": 1.5},
+      "front_speaker": {"doc": "A speaker layout (amp assign) change can silently reset the front speaker A/B selection (seen live): SSPAAMOD is pushed, so re-read it (SSFRSDST is part of the answer to PSFRONT?).", "on": ["SSPAAMOD"], "queries": ["PSFRONT?"], "debounce": 1.5},
       "speaker_preset": {"doc": "A Speaker Preset switch replaces the whole speaker setup: re-query everything speaker related on telnet and re-read the speakers and graphic EQ web documents.", "on": ["SPPR"], "queries": ["SSSPC ?", "SSCFR ?", "SSLEV ?", "SSSDE ?", "CV?", "SSLFL ?", "SSSWM ?", "PSFRONT?", "PSGEQ ?", "PSMULTEQ: ?", "PSDYNEQ ?", "PSDYNVOL ?", "PSREFLEV ?", "PSLFC ?", "PSCNTAMT ?", "PSSP: ?"], "web": ["speakers", "graphic_eq"], "debounce": 1.5}
     }
   },
@@ -641,7 +619,7 @@
       "prefix": "PSSWR ",
       "on": "ON",
       "off": "OFF",
-      "doc": "Subwoofer output switch for Direct/Stereo; distinct from the PSSWL ON/OFF subwoofer level adjustment."
+      "doc": "Subwoofer level adjustment enable."
     },
     "subwoofer_level": {
       "group": "speaker",

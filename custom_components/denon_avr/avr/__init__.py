@@ -38,3 +38,5 @@ __all__ = [
     "eq_channel_options",
     "load_profile",
 ]
+
+from .local_device import VOLUME_LEVEL_SCALE, LocalDenonAvrDevice, is_x1400h  # noqa: E402  LOCAL HOOK (see LOCAL_MODS.md)
