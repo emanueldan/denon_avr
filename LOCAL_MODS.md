@@ -23,8 +23,10 @@ Upstream files only carry one or two lines marked `# LOCAL HOOK` (search for it)
 
 - **Amp Assign** (Front B / Front Height) with the direct command `SSPAAMOD FRB|FRH`
   (verified live: switches in < 2 s, no on-screen menu, the source stays). Confirmed by the
-  `SSPAAMOD` push, else by re-reading the speaker setup; the on-screen-menu macro is only a
-  fallback. Front B puts the front speakers back on **A + B**.
+  `SSPAAMOD` push, else by re-reading the speaker setup. Right after power on the receiver
+  ignores the command for some seconds, so it is retried (3 attempts, ~6.5 s each); the
+  on-screen-menu macro is only the fallback after all of them. Front B puts the front
+  speakers back on **A + B**.
   Entities: `select.avr_x1400h_speakers_amp_assign`, `button.avr_x1400h_speakers_amp_assign_front_b`,
   `button.avr_x1400h_speakers_amp_assign_front_height`, `sensor.avr_x1400h_speakers_amp_assign`.
 - **Dolby Surround**: the AVR-X1400H ignores `MSDOLBY SURROUND` as a setter; it is reached by

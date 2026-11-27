@@ -31,6 +31,11 @@ AMP_ASSIGN = {
     "front_height": ("FRH", "Front Height"),
 }
 
+# Right after power on the AVR-X1400H ignores SSPAAMOD for some seconds (seen live:
+# sent 6 s after power on, unanswered), so the direct command is retried before the
+# on-screen-menu fallback. Each attempt waits ~6.5 s (push, then the speaker setup).
+AMP_ASSIGN_DIRECT_ATTEMPTS = 3
+
 
 def is_x1400h(device) -> bool:
     """The Amp Assign handling is specific to the AVR-X1400H."""
@@ -208,14 +213,30 @@ class LocalDenonAvrDevice(DenonAvrDevice):
                 return True
         return False
 
+    async def _send_amp_assign_direct(self, token: str, label: str) -> bool:
+        """Send SSPAAMOD once; True when the push (or else the speaker setup) confirms it."""
+
+        self._state.values.pop("amp_assign", None)
+        await self._telnet.async_send(f"SSPAAMOD {token}")
+        for _ in range(40):
+            await asyncio.sleep(0.1)
+            if self._state.values.get("amp_assign") == label:
+                return True
+        if await self._confirm_amp_assign_by_speaker_setup(label):
+            self._state.values["amp_assign"] = label
+            self._notifier.schedule()
+            return True
+        return False
+
     async def async_set_amp_assign(self, mode: str) -> None:
         """Set Amp Assign with the direct command SSPAAMOD <FRB|FRH>.
 
         Verified live on AVR-X1400H (2026-11-25): switches within 2 s, pushes
         SSPAAMOD and keeps the source (no on-screen menu). The confirmation is
-        awaited (push, else the speaker setup); only without it the on-screen-menu macro
-        runs. Front B then gets the A + B front speaker selection back (the change
-        resets it) and the speaker values are re-read.
+        awaited (push, else the speaker setup) and the command is retried, because the
+        AVR ignores it for some seconds after power on; only when no attempt is
+        confirmed the on-screen-menu macro runs. Front B then gets the A + B front
+        speaker selection back (the change resets it) and the speaker values are re-read.
         """
 
         spec = AMP_ASSIGN.get(mode)
@@ -225,21 +246,14 @@ class LocalDenonAvrDevice(DenonAvrDevice):
         use_menu = False
         async with self._amp_assign_lock:
             if self.amp_assign_label() != label:
-                self._state.values.pop("amp_assign", None)
-                await self._telnet.async_send(f"SSPAAMOD {token}")
-                confirmed = False
-                for _ in range(40):
-                    await asyncio.sleep(0.1)
-                    if self._state.values.get("amp_assign") == label:
-                        confirmed = True
+                for attempt in range(1, AMP_ASSIGN_DIRECT_ATTEMPTS + 1):
+                    if await self._send_amp_assign_direct(token, label):
                         break
-                if not confirmed:
-                    confirmed = await self._confirm_amp_assign_by_speaker_setup(label)
-                    if confirmed:
-                        self._state.values["amp_assign"] = label
-                        self._notifier.schedule()
-                if not confirmed:
-                    _LOGGER.warning("SSPAAMOD %s not confirmed; using the on-screen-menu fallback", token)
+                    _LOGGER.debug("SSPAAMOD %s not confirmed (attempt %d of %d)",
+                                  token, attempt, AMP_ASSIGN_DIRECT_ATTEMPTS)
+                else:
+                    _LOGGER.warning("SSPAAMOD %s not confirmed after %d attempts; using the on-screen-menu fallback",
+                                    token, AMP_ASSIGN_DIRECT_ATTEMPTS)
                     use_menu = True
         if use_menu:
             await self.async_set_amp_assign_from_menu(mode)

@@ -128,6 +128,59 @@ def test_amp_assign_modes():
     assert AMP_ASSIGN["front_b"][0] == "FRB" and AMP_ASSIGN["front_height"][0] == "FRH"
 
 
+def _amp_assign_device(monkeypatch, confirm_on_send=None):
+    """A device whose telnet only records; the receiver pushes SSPAAMOD on the
+    `confirm_on_send`-th SSPAAMOD (never when None). No real waiting."""
+    import avr.local_device as local_device
+
+    async def no_sleep(_delay):
+        return None
+
+    monkeypatch.setattr(local_device.asyncio, "sleep", no_sleep)
+    device = _device()
+    sent: list[str] = []
+    controls: list[tuple[str, object]] = []
+    menu: list[str] = []
+
+    async def send(command):
+        sent.append(command)
+        if command.startswith("SSPAAMOD") and sum(c.startswith("SSPAAMOD") for c in sent) == confirm_on_send:
+            device.state.values["amp_assign"] = {"FRB": "Front B", "FRH": "Front Height"}[command[9:]]
+
+    async def set_control(control_id, value):
+        controls.append((control_id, value))
+
+    async def from_menu(mode):
+        menu.append(mode)
+
+    monkeypatch.setattr(device._telnet, "async_send", send)
+    monkeypatch.setattr(device._control, "set_control", set_control)
+    monkeypatch.setattr(device._sync, "_schedule_refresh", lambda _group: None)
+    monkeypatch.setattr(device, "async_set_amp_assign_from_menu", from_menu)
+    return device, sent, controls, menu
+
+
+async def test_amp_assign_retries_the_direct_command_before_the_menu(monkeypatch):
+    # Just after power on the AVR ignores the first SSPAAMOD; the second one is confirmed.
+    device, sent, controls, menu = _amp_assign_device(monkeypatch, confirm_on_send=2)
+    device.state.values["amp_assign"] = "Front Height"
+    await device.async_set_amp_assign("front_b")
+    assert [c for c in sent if c.startswith("SSPAAMOD")] == ["SSPAAMOD FRB", "SSPAAMOD FRB"]
+    assert menu == []
+    assert device.amp_assign_label() == "Front B"
+    assert controls == [("front_speaker", "A+B")]
+
+
+async def test_amp_assign_uses_the_menu_only_after_all_direct_attempts(monkeypatch):
+    from avr.local_device import AMP_ASSIGN_DIRECT_ATTEMPTS
+
+    device, sent, _controls, menu = _amp_assign_device(monkeypatch)
+    device.state.values["amp_assign"] = "Front B"
+    await device.async_set_amp_assign("front_height")
+    assert sum(c == "SSPAAMOD FRH" for c in sent) == AMP_ASSIGN_DIRECT_ATTEMPTS
+    assert menu == ["front_height"]
+
+
 # Hooks ---------------------------------------------------------------------------
 
 @pytest.mark.parametrize(("file", "needle"), [
